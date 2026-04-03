@@ -13,19 +13,19 @@ bool parseArgs(int argc, char* argv[], std::string& r_name, std::string& start_d
     for (int i=1; i<argc; i++) {
         std::string a = argv[i];
 
-        if (a == "--r_name" && i + 1 < argc) {
+        if (a == "--r_name" && i+1<argc) {
             i++;
             r_name = argv[i];
         } 
-        else if (a == "--start_date" && i + 1 < argc) {
+        else if(a == "--start_date" && i+1 < argc) {
             i++;
             start_date = argv[i];
         } 
-        else if (a == "--end_date" && i + 1 < argc) {
+        else if (a == "--end_date" && i+1 < argc) {
             i++;
             end_date = argv[i];
         } 
-        else if (a == "--threads" && i + 1 < argc) {
+        else if (a== "--threads" && i + 1 < argc) {
             i++;
             num_threads = std::stoi(argv[i]);
         } 
@@ -51,7 +51,7 @@ bool parseArgs(int argc, char* argv[], std::string& r_name, std::string& start_d
 
 
 // Function to read TPCH data from the specified paths
-std::vector<std::string> split(const std::string &line, char delimiter) {
+std::vector<std::string> split(const std::string &line, char delimiter){
     std::vector<std::string> parts;
     std::stringstream ss(line);
     std::string item = "";
@@ -67,16 +67,20 @@ bool readingFile(const std::string& path, std::vector<std::map<std::string, std:
         return false;
     }
 
-    std::string line;
-    while (getline(file, line)) {
+    std:: string line;
+    int count=0;
+    while (getline(file, line) && count<50000) {
         auto parts = split(line, '|');
         std::map<std::string, std::string> r;
 
 
-        for (int i=0; i<key.size(); i++) {
+        for (int i=0; i<key.size() && i<parts.size(); i++){
+            if (key[i] != "skip"){
             r[key[i]] = parts[i];
+            }
         }
         data.push_back(r);
+        count++;
     }
     return true;
 }
@@ -87,10 +91,10 @@ bool readingFile(const std::string& path, std::vector<std::map<std::string, std:
 
 bool readTPCHData(const std::string& table_path, std::vector<std::map<std::string, std::string>>& customer_data, std::vector<std::map<std::string, std::string>>& orders_data, std::vector<std::map<std::string, std::string>>& lineitem_data, std::vector<std::map<std::string, std::string>>& supplier_data, std::vector<std::map<std::string, std::string>>& nation_data, std::vector<std::map<std::string, std::string>>& region_data) {
     // TODO: Implement reading TPCH data from files
-    return readingFile(table_path + "/customer.tbl", customer_data, {"c_custkey", "c_nationkey"})  &&
-        readingFile(table_path + "/orders.tbl", orders_data, {"o_orderkey", "o_custkey", "o_orderdate"}) &&
-        readingFile(table_path + "/lineitem.tbl", lineitem_data,{"l_orderkey", "l_suppkey", "l_extendedprice", "l_discount"}) &&
-        readingFile(table_path + "/supplier.tbl", supplier_data,{"s_suppkey", "s_nationkey"}) &&
+    return readingFile(table_path + "/customer.tbl", customer_data, {"c_custkey","skip","skip","c_nationkey"})  &&
+        readingFile(table_path + "/orders.tbl", orders_data, {"o_orderkey","o_custkey","skip","skip","o_orderdate"}) &&
+        readingFile(table_path + "/lineitem.tbl", lineitem_data,{"l_orderkey", "skip","l_suppkey","skip","skip","l_extendedprice", "l_discount"}) &&
+        readingFile(table_path + "/supplier.tbl", supplier_data,{"s_suppkey", "skip","skip", "s_nationkey"}) &&
         readingFile(table_path + "/nation.tbl", nation_data,{"n_nationkey", "n_name", "n_regionkey"}) &&
         readingFile(table_path + "/region.tbl", region_data,{"r_regionkey", "r_name"});
 }
@@ -100,8 +104,9 @@ bool executeQuery5(const std::string& r_name, const std::string& start_date, con
     // TODO: Implement TPCH Query 5 using multithreading
     std::string regionKey;
     for(auto &r : region_data){ // finding region key
-        if (r.at("r_name") == r_name){
+        if(r.at("r_name") == r_name){
             regionKey = r.at("r_regionkey");
+            break;
         }
     }
     std::map<std::string, std::string>  nationMpp; // nation to region mapping
@@ -131,6 +136,8 @@ bool executeQuery5(const std::string& r_name, const std::string& start_date, con
         }
     }
 
+     std::mutex mtx;
+
     // THREAD FUNCTION
     auto worker= [&](int s,int e){
         std:: map<std:: string,double>r; // temp. result map
@@ -158,7 +165,7 @@ bool executeQuery5(const std::string& r_name, const std::string& start_date, con
         }
 
         // Merging
-            std::mutex mtx;
+           
         std::lock_guard<std::mutex> lock(mtx);
         for(auto& p:r){
             results[p.first]+= p.second;
@@ -200,7 +207,14 @@ bool outputResults(const std::string& result_path, const std::map<std::string, d
         std::cerr<<"Error: Could not open result file."<<std::endl;
         return false;
     }
-    for(const auto& e :results){
+
+    //converting map to vector for sorting
+    std::vector<std::pair<std::string, double>> res(results.begin(), results.end());
+     std::sort(res.begin(), res.end(), [](std::pair<std::string, double> &a, std::pair<std::string, double> &b) {
+        return a.second > b.second;
+    });
+
+    for(const auto& e :res){ // writing sorted output
         file<<e.first <<" : "<<e.second<< std::endl;
     }
 
